@@ -35,7 +35,7 @@ public class LoginForm extends JFrame {
         checkDatabaseConnection();
 
         setTitle("MotorPH Payroll System - Login");
-        setSize(550, 620); // Slightly larger for new components
+        setSize(550, 620);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setResizable(true);
@@ -156,7 +156,7 @@ public class LoginForm extends JFrame {
         showPasswordPanel.setBackground(Color.WHITE);
         showPasswordPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
         showPasswordCheckBox.setBackground(Color.WHITE);
-        showPasswordPanel.add(Box.createHorizontalStrut(110)); // Align with labels
+        showPasswordPanel.add(Box.createHorizontalStrut(110));
         showPasswordPanel.add(showPasswordCheckBox);
 
         // Status panel
@@ -192,20 +192,37 @@ public class LoginForm extends JFrame {
         connectionPanel.setBackground(Color.WHITE);
         connectionPanel.add(connectionStatusLabel);
 
-        // Updated info panel with correct credentials from your database
-        JPanel infoPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        // PROFESSIONAL: Logo and company info panel (NO CREDENTIALS SHOWN)
+        JPanel infoPanel = new JPanel(new BorderLayout());
         infoPanel.setBackground(new Color(248, 248, 255));
-        infoPanel.setBorder(BorderFactory.createEmptyBorder(15, 10, 15, 10));
+        infoPanel.setBorder(BorderFactory.createEmptyBorder(20, 10, 20, 10));
 
-        JLabel infoLabel = new JLabel("<html><center>" +
-                "<b>🔑 Default Test Credentials</b><br/>" +
-                "Employee ID: <b>10001 - 10034</b><br/>" +
-                "Password: <b>garcia6057</b> (for ID: 10001)<br/>" +
-                "<small>💡 HR/Management roles will access HR Dashboard</small>" +
+        // Logo panel
+        JPanel logoPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        logoPanel.setBackground(new Color(248, 248, 255));
+        
+        // Create motorcycle logo using text/symbols (you can replace with actual image later)
+        JLabel logoLabel = new JLabel("<html><center>" +
+                "<div style='font-size: 24px; color: #D32F2F;'>🏍️</div>" +
+                "<div style='font-size: 16px; font-weight: bold; color: #1976D2;'>MotorPH</div>" +
+                "<div style='font-size: 12px; color: #666;'>Motorcycle Parts & Services</div>" +
                 "</center></html>");
-        infoLabel.setFont(new Font("Arial", Font.PLAIN, 11));
-        infoLabel.setForeground(new Color(70, 70, 70));
-        infoPanel.add(infoLabel);
+        logoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        logoPanel.add(logoLabel);
+
+        // Security notice panel
+        JPanel securityPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        securityPanel.setBackground(new Color(248, 248, 255));
+        
+        JLabel securityLabel = new JLabel("<html><center>" +
+                "<small style='color: #666;'>🔒 Secure Employee Access Portal</small><br/>" +
+                "<small style='color: #666;'>Contact IT Support for login assistance</small>" +
+                "</center></html>");
+        securityLabel.setFont(new Font("Arial", Font.PLAIN, 10));
+        securityPanel.add(securityLabel);
+
+        infoPanel.add(logoPanel, BorderLayout.CENTER);
+        infoPanel.add(securityPanel, BorderLayout.SOUTH);
 
         // Assemble main panel
         mainPanel.add(headerPanel, BorderLayout.NORTH);
@@ -323,9 +340,9 @@ public class LoginForm extends JFrame {
             return;
         }
 
-        // Validate employee ID range (based on your data)
-        if (employeeId < 10001 || employeeId > 10034) {
-            showStatus("⚠️ Employee ID must be between 10001 and 10034", Color.ORANGE);
+        // DYNAMIC VALIDATION: Check if employee exists in database
+        if (!isValidEmployeeId(employeeId)) {
+            showStatus("⚠️ Employee ID not found in system", Color.RED);
             employeeIdField.selectAll();
             employeeIdField.requestFocus();
             return;
@@ -375,6 +392,30 @@ public class LoginForm extends JFrame {
         authWorker.execute();
     }
 
+    /**
+     * DYNAMIC VALIDATION: Check if employee ID exists in database
+     * This replaces hardcoded range validation and works for any number of employees
+     */
+    private boolean isValidEmployeeId(int employeeId) {
+        String query = "SELECT COUNT(*) FROM employees WHERE employee_id = ?";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            
+            stmt.setInt(1, employeeId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    boolean exists = rs.getInt(1) > 0;
+                    LOGGER.info(String.format("Employee ID validation: %d -> %s", 
+                            employeeId, exists ? "EXISTS" : "NOT FOUND"));
+                    return exists;
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.WARNING, "Error validating employee ID: " + employeeId, e);
+        }
+        return false;
+    }
+
     private LoginResult performAuthentication(int employeeId, String password) {
         try {
             // Test database connection first
@@ -403,9 +444,10 @@ public class LoginForm extends JFrame {
         }
     }
 
-    // FIXED: Changed c.password to c.password_hash to match database schema
+    // FIXED: Authentication method with correct column name 'password_hash'
     private boolean authenticateUser(int employeeId, String password) {
-        String query = "SELECT e.employee_id, e.first_name, e.last_name FROM employees e " +
+        // CORRECTED: Using 'password_hash' column instead of 'password'
+        String query = "SELECT e.employee_id, e.first_name, e.last_name, e.position FROM employees e " +
                 "JOIN credentials c ON e.employee_id = c.employee_id " +
                 "WHERE e.employee_id = ? AND c.password_hash = ?";
 
@@ -417,8 +459,45 @@ public class LoginForm extends JFrame {
 
             try (ResultSet rs = stmt.executeQuery()) {
                 boolean authenticated = rs.next();
-                LOGGER.info(String.format("Authentication attempt for employee %d: %s",
-                        employeeId, authenticated ? "SUCCESS" : "FAILED"));
+                
+                if (authenticated) {
+                    String firstName = rs.getString("first_name");
+                    String lastName = rs.getString("last_name");
+                    String position = rs.getString("position");
+                    LOGGER.info(String.format("✅ Authentication SUCCESS for %s %s (ID: %d, Position: %s)",
+                            firstName, lastName, employeeId, position));
+                } else {
+                    LOGGER.warning(String.format("❌ Authentication FAILED for employee ID: %d", employeeId));
+                    
+                    // Enhanced debugging with correct column names
+                    String debugQuery = "SELECT c.employee_id, c.username, c.password_hash, " +
+                            "e.first_name, e.last_name " +
+                            "FROM credentials c " +
+                            "JOIN employees e ON c.employee_id = e.employee_id " +
+                            "WHERE c.employee_id = ?";
+                    
+                    try (PreparedStatement debugStmt = conn.prepareStatement(debugQuery)) {
+                        debugStmt.setInt(1, employeeId);
+                        try (ResultSet debugRs = debugStmt.executeQuery()) {
+                            if (debugRs.next()) {
+                                String username = debugRs.getString("username");
+                                String actualPasswordHash = debugRs.getString("password_hash");
+                                String firstName = debugRs.getString("first_name");
+                                String lastName = debugRs.getString("last_name");
+                                
+                                LOGGER.info(String.format("🔍 Debug Info for Employee %d:", employeeId));
+                                LOGGER.info(String.format("   Name: %s %s", firstName, lastName));
+                                LOGGER.info(String.format("   Username: %s", username));
+                                LOGGER.info(String.format("   Stored Password Hash: %s", actualPasswordHash));
+                                LOGGER.info(String.format("   Provided Password: %s", password));
+                                LOGGER.info(String.format("   Password Match: %s", password.equals(actualPasswordHash)));
+                            } else {
+                                LOGGER.warning("❌ Employee ID does not exist in credentials table: " + employeeId);
+                            }
+                        }
+                    }
+                }
+                
                 return authenticated;
             }
 
